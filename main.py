@@ -10,7 +10,7 @@ from aiogram.filters import Command
 
 BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
 BUYER = "defqux"
-ADMIN_ID = 8548929333
+ADMIN_ID = 8377108870
 DEFAULT_STARS = 7000
 
 logging.basicConfig(level=logging.INFO)
