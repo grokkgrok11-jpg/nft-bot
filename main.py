@@ -9,7 +9,7 @@ from aiogram.types import (
 )
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8850115069:AA..."  # вставь свой токен
+BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"  # вставь свой токен
 current_buyer = "faqux"
 DEFAULT_STARS = 7000
 
