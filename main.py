@@ -63,8 +63,8 @@ async def on_msg(message: Message):
     remaining = format_remaining(expiry)
 
     offer_text = (
-        f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок "
-        f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>.</b>\n\n"
+        f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>\n\n"
+        f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок.</b>\n\n"
         f"Предложение действует ещё <b>{remaining}</b>."
     )
     cb_data = f"acc|{gift['stars']}|{gift['gift_name'][:25]}"
