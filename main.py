@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8731128809:AAGKkScn9upJcg5atWJxFISR7hEhAllIRfc"
+BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
 WEBAPP_URL = "small-flower-5d36.grokkgrok11.workers.dev"  # замени на свой
 current_buyer = "faqux"
 DEFAULT_STARS = 7000
