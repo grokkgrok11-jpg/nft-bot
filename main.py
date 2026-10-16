@@ -18,11 +18,6 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 
-@dp.message()
-async def debug_all(message: Message):
-    print(f"GOT: '{message.text}' from {message.from_user.id}", flush=True)
-
-
 def parse_gift(text: str):
     m = re.search(r't\.me/nft/([A-Za-z0-9]+)-(\d+)', text)
     if not m:
@@ -44,12 +39,13 @@ def parse_gift(text: str):
 
 @dp.message(Command("start"))
 async def start(message: Message):
+    print(f"START from {message.from_user.id}", flush=True)
     await message.answer("Бот работает")
 
 
 @dp.message(Command("offer"))
 async def cmd_offer(message: Message):
-    print(f"OFFER cmd from {message.from_user.id}", flush=True)
+    print(f"OFFER from {message.from_user.id}: {message.text}", flush=True)
     if message.from_user.id != ADMIN_ID:
         await message.answer("Нет прав")
         return
@@ -80,6 +76,12 @@ async def cmd_offer(message: Message):
     except Exception as e:
         print(f"ERROR: {e}", flush=True)
         await message.answer(f"Ошибка: {e}")
+
+
+@dp.message()
+async def fallback(message: Message):
+    print(f"OTHER: {message.text}", flush=True)
+    await message.answer("Напиши /start или /offer")
 
 
 @dp.callback_query(F.data == "dec")
