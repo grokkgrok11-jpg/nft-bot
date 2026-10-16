@@ -8,7 +8,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.enums import ParseMode
 
 BOT_TOKEN = "8731128809:AAGKkScn9upJcg5atWJxFISR7hEhAllIRfc"
-WEBAPP_URL = "https://calm-sound-e0a8.ekovalev19832010-1ce.workers.dev"  # замени на свой
+WEBAPP_URL = "small-flower-5d36.grokkgrok11.workers.dev"  # замени на свой
 current_buyer = "faqux"
 DEFAULT_STARS = 7000
 
