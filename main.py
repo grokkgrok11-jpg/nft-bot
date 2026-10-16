@@ -7,8 +7,8 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8850115069:AA..."  # вставь свой токен
-BUYER = "legitimy"
+BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"  # вставь свой токен
+BUYER = "defqux"
 DEFAULT_STARS = 7000
 OFFER_DURATION_HOURS = 6  # сколько часов действует оффер
 
