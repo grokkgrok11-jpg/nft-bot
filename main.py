@@ -1,5 +1,4 @@
 import asyncio
-import asyncio
 import logging
 import re
 from datetime import datetime, timedelta
@@ -17,6 +16,11 @@ DEFAULT_STARS = 7000
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+
+@dp.message()
+async def debug_all(message: Message):
+    print(f"GOT: '{message.text}' from {message.from_user.id}", flush=True)
 
 
 def parse_gift(text: str):
@@ -45,7 +49,7 @@ async def start(message: Message):
 
 @dp.message(Command("offer"))
 async def cmd_offer(message: Message):
-    print(f"OFFER from {message.from_user.id}: {message.text}", flush=True)
+    print(f"OFFER cmd from {message.from_user.id}", flush=True)
     if message.from_user.id != ADMIN_ID:
         await message.answer("Нет прав")
         return
