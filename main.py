@@ -6,9 +6,11 @@ from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
+from aiogram.filters import Command
 
 BOT_TOKEN = "8850115069:AAHt8yX4-4gswis3VY4mmO2zj_ipBjkK2s4"
 BUYER = "defqux"
+ADMIN_ID = 8548929333
 DEFAULT_STARS = 7000
 OFFER_DURATION_HOURS = 6
 
@@ -50,18 +52,7 @@ def format_remaining(expiry: datetime) -> str:
     return f"{hours}ч {minutes}м"
 
 
-@dp.message()
-async def on_msg(message: Message):
-    text = message.text or ""
-    gift = parse_gift(text)
-    if not gift:
-        await message.answer("Кинь ссылку t.me/nft/... и цену")
-        return
-
-    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
-    offer_expiry[message.chat.id] = expiry
-    remaining = format_remaining(expiry)
-
+async def send_offer(chat_id: int, gift: dict, remaining: str):
     offer_text = (
         f"<a href=\"{gift['link']}\">{gift['gift_name']}</a>\n\n"
         f"<b>Пользователь {BUYER} предлагает Вам {gift['stars']} Stars за подарок.</b>\n\n"
@@ -72,9 +63,50 @@ async def on_msg(message: Message):
         InlineKeyboardButton(text="✗ Отклонить", callback_data="dec"),
         InlineKeyboardButton(text="✓ Принять", callback_data=cb_data)
     ]])
+    await bot.send_message(chat_id, offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
-    await message.answer("Готово. Перешли ниже.")
-    await message.answer(offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+@dp.message(Command("offer"))
+async def cmd_offer(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Формат: /offer <chat_id> https://t.me/nft/... 5000")
+        return
+    rest = args[1]
+    m = re.match(r'(\d+)\s+(.+)', rest)
+    if not m:
+        await message.answer("Формат: /offer <chat_id> https://t.me/nft/... 5000")
+        return
+    chat_id = int(m.group(1))
+    gift = parse_gift(m.group(2))
+    if not gift:
+        await message.answer("Не нашёл ссылку")
+        return
+    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
+    offer_expiry[chat_id] = expiry
+    remaining = format_remaining(expiry)
+    try:
+        await send_offer(chat_id, gift, remaining)
+        await message.answer(f"Отправлено в {chat_id}")
+    except Exception as e:
+        await message.answer(f"Ошибка: {e}")
+
+
+@dp.message()
+async def on_msg(message: Message):
+    if message.from_user.id == ADMIN_ID and message.text and message.text.startswith("/"):
+        return
+    text = message.text or ""
+    gift = parse_gift(text)
+    if not gift:
+        return
+    expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
+    offer_expiry[message.chat.id] = expiry
+    remaining = format_remaining(expiry)
+    await message.answer("Готово.")
+    await send_offer(message.chat.id, gift, remaining)
 
 
 @dp.callback_query(F.data == "dec")
@@ -91,16 +123,13 @@ async def on_acc(cb: CallbackQuery):
     parts = cb.data.split("|", 2)
     stars = parts[1] if len(parts) > 1 else str(DEFAULT_STARS)
     gift_name = parts[2] if len(parts) > 2 else "подарок"
-
     expiry = offer_expiry.get(cb.message.chat.id)
     remaining = format_remaining(expiry) if expiry else "0ч 0м"
-
     alert_text = (
         f"Предложение о продаже {gift_name} успешно принято.\n\n"
         f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс."
     )
     await cb.answer(alert_text, show_alert=True)
-
     transfer_url = "tg://send_gift?to=defqux"
     success_text = (
         f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
